@@ -199,25 +199,24 @@ function handleBotTurn(roomId: string) {
 function handleJailAction(roomId: string, game: GameState, player: Player, action: string) {
   switch (action) {
     case 'pay':
-      if (player.money >= JAIL_BAIL) {
-        player.money -= JAIL_BAIL;
-        freeFromJail(game, player);
-        game.phase = 'rolling';
-        broadcastGameState(roomId);
-        // Bot continues to roll
-        setTimeout(() => handleBotTurn(roomId), 1000);
-      } else {
-        player.jailTurns++;
-        endTurn(roomId, game);
-      }
+      // Always allow paying - even if can't fully afford, deduct what they have
+      player.money -= JAIL_BAIL;
+      freeFromJail(game, player);
+      addEvent(game, 'freed', `${player.name} paid bail!`,
+        `${player.name} دفع الكفالة وخرج!`);
+      game.phase = 'rolling';
+      broadcastGameState(roomId);
+      if (player.isBot) setTimeout(() => handleBotTurn(roomId), 1000);
       break;
     case 'card':
       if (player.getOutOfJailCards > 0) {
         player.getOutOfJailCards--;
         freeFromJail(game, player);
+        addEvent(game, 'freed', `${player.name} used a get out of jail card!`,
+          `${player.name} استخدم بطاقة الخروج من السجن!`);
         game.phase = 'rolling';
         broadcastGameState(roomId);
-        setTimeout(() => handleBotTurn(roomId), 1000);
+        if (player.isBot) setTimeout(() => handleBotTurn(roomId), 1000);
       }
       break;
     case 'roll': {
@@ -240,28 +239,42 @@ function handleJailAction(roomId: string, game: GameState, player: Player, actio
           if (player.isBot) setTimeout(() => processBotPhase(roomId), 1500);
         }, 1500);
       } else {
-        addEvent(game, 'jail', `${player.name} didn't roll a double, still in jail`,
-          `${player.name} لم يرمي دوبل، لا يزال في السجن`);
-        setTimeout(() => {
-          const g = games.get(roomId);
-          if (!g) return;
-          player.jailTurns++;
-          if (player.jailTurns >= 3) {
+        player.jailTurns++;
+        if (player.jailTurns >= 3) {
+          // After 3 failed rolls, forced to pay bail
+          addEvent(game, 'jail', `${player.name} paid bail after 3 turns`,
+            `${player.name} دفع الكفالة بعد 3 أدوار`);
+          setTimeout(() => {
+            const g = games.get(roomId);
+            if (!g) return;
             player.money -= JAIL_BAIL;
             freeFromJail(g, player);
-            addEvent(g, 'jail', `${player.name} paid bail after 3 turns`,
-              `${player.name} دفع الكفالة بعد 3 أدوار`);
-          }
-          endTurn(roomId, g);
-        }, 1500);
+            movePlayer(g, player, dice.total);
+            const nextPhase = processTileAction(g, player);
+            g.phase = nextPhase;
+            broadcastGameState(roomId);
+            if (player.isBot) setTimeout(() => processBotPhase(roomId), 1500);
+          }, 1500);
+        } else {
+          addEvent(game, 'jail', `${player.name} didn't roll a double (${player.jailTurns}/3)`,
+            `${player.name} لم يرمي دوبل (${player.jailTurns}/3)`);
+          setTimeout(() => {
+            const g = games.get(roomId);
+            if (!g) return;
+            endTurn(roomId, g);
+          }, 1500);
+        }
       }
       break;
     }
     case 'wait':
+      // Wait = just end turn, count as a jail turn
       player.jailTurns++;
       if (player.jailTurns >= 3) {
         player.money -= JAIL_BAIL;
         freeFromJail(game, player);
+        addEvent(game, 'jail', `${player.name} paid bail after 3 turns`,
+          `${player.name} دفع الكفالة بعد 3 أدوار`);
       }
       endTurn(roomId, game);
       break;

@@ -717,14 +717,14 @@ body {
 .tile-houses {
   position: absolute;
   display: flex;
-  gap: 0px;
-  font-size: 7px;
+  gap: 1px;
+  font-size: clamp(9px, 1.4vw, 13px);
   z-index: 5;
 }
-.tile-houses-right { top: 2px; left: 8px; flex-direction: column; }
-.tile-houses-left { top: 2px; right: 8px; flex-direction: column; }
-.tile-houses-top { bottom: 8px; left: 2px; }
-.tile-houses-bottom { top: 8px; left: 2px; }
+.tile-houses-right { top: 2px; left: 9px; flex-direction: column; }
+.tile-houses-left { top: 2px; right: 9px; flex-direction: column; }
+.tile-houses-top { bottom: 9px; left: 2px; }
+.tile-houses-bottom { top: 9px; left: 2px; }
 .tile-houses-corner { top: 2px; left: 2px; }
 
 /* Owner flag */

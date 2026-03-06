@@ -14,6 +14,7 @@ import EventBanner from './EventBanner';
 import TileDetailPopup from './TileDetailPopup';
 import QuickChat from './QuickChat';
 import EventLog from './EventLog';
+import BuildPanel from './BuildPanel';
 import { SFX } from '../sounds';
 
 interface Props {
@@ -34,6 +35,7 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
   const [showMyCards, setShowMyCards] = useState(false);
   const [selectedTileId, setSelectedTileId] = useState<number | null>(null);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showBuild, setShowBuild] = useState(false);
   const [chatBubbles, setChatBubbles] = useState<Record<string, { text: string; id: number }>>({});
   const bubbleIdRef = useRef(0);
 
@@ -206,13 +208,13 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
 
   const currentTileId = currentPlayer?.position;
 
-  // Build bubble map per tile position
-  const tileBubbles: Record<number, { playerName: string; text: string }> = {};
+  // Build bubble list with player positions
+  const activeBubbles: { pid: string; name: string; text: string; position: number; pieceId: string }[] = [];
   for (const [pid, bubble] of Object.entries(chatBubbles)) {
     const player = gameState.players.find(p => p.id === pid);
     if (player && !player.bankrupt) {
       const pos = animPositions[pid] !== undefined ? animPositions[pid] : player.position;
-      tileBubbles[pos] = { playerName: player.name, text: bubble.text };
+      activeBubbles.push({ pid, name: player.name, text: bubble.text, position: pos, pieceId: player.pieceId });
     }
   }
 
@@ -230,12 +232,28 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
       middlePot={id === 20 ? gameState.middlePot : undefined}
       side={side}
       onClick={() => setSelectedTileId(id)}
-      chatBubble={tileBubbles[id]}
     />
   );
 
   return (
     <div className="game-container">
+      {/* Chat bubbles floating */}
+      {activeBubbles.length > 0 && (
+        <div className="chat-bubbles-overlay">
+          {activeBubbles.map(b => (
+            <div key={b.pid + '-' + chatBubbles[b.pid]?.id} className="floating-chat-bubble">
+              <span className="bubble-piece" style={{ background: getPlayerColor(b.pid) }}>
+                {getPieceEmoji(b.pieceId)}
+              </span>
+              <div className="bubble-body">
+                <span className="bubble-name">{b.name}</span>
+                <span className="bubble-text">{b.text}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {latestEvent && <EventBanner event={latestEvent} />}
 
       {gameState.currentCard && gameState.phase === 'card_drawn' && (
@@ -354,9 +372,16 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
                     </button>
                   )}
                   {isMyTurn && gameState.phase === 'managing' && (
-                    <button className="roll-center-btn end-turn-center" onClick={() => socket.emit('end_turn')}>
-                      ✅ انهاء الدور
-                    </button>
+                    <div className="center-manage-btns">
+                      {myPlayer && myPlayer.properties.length > 0 && (
+                        <button className="roll-center-btn build-center" onClick={() => setShowBuild(true)}>
+                          🏗️ بناء
+                        </button>
+                      )}
+                      <button className="roll-center-btn end-turn-center" onClick={() => socket.emit('end_turn')}>
+                        ✅ انهاء الدور
+                      </button>
+                    </div>
                   )}
                   {!isMyTurn && (
                     <div className="center-waiting">⏳ دور {currentPlayer?.name}</div>
@@ -485,6 +510,9 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
         </div>
       )}
 
+      {showBuild && myPlayer && (
+        <BuildPanel myPlayer={myPlayer} onClose={() => setShowBuild(false)} />
+      )}
       {showChat && (
         <ChatPanel messages={chatMessages} players={gameState.players} myPlayerId={playerId} onClose={() => setShowChat(false)} />
       )}

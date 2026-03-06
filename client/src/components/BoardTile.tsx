@@ -1,5 +1,5 @@
 import type { Player } from '../App';
-import type { TileData, PropertyGroup } from '../gameData';
+import type { TileData } from '../gameData';
 import { GROUP_COLORS, formatMoney } from '../gameData';
 
 interface Props {
@@ -14,7 +14,6 @@ interface Props {
   middlePot?: number;
   side: string;
   onClick?: () => void;
-  chatBubble?: { playerName: string; text: string };
 }
 
 const TILE_ICONS: Record<string, string> = {
@@ -33,7 +32,7 @@ const TILE_ICONS: Record<string, string> = {
   property: '🏘️',
 };
 
-export default function BoardTile({ tile, players, owner, ownerColor, houses, getPieceEmoji, getPlayerColor, isHighlighted, middlePot, side, onClick, chatBubble }: Props) {
+export default function BoardTile({ tile, players, owner, ownerColor, houses, getPieceEmoji, getPlayerColor, isHighlighted, middlePot, side, onClick }: Props) {
   const groupColor = tile.group ? GROUP_COLORS[tile.group] : undefined;
 
   return (
@@ -87,15 +86,6 @@ export default function BoardTile({ tile, players, owner, ownerColor, houses, ge
               {getPieceEmoji(p.pieceId)}
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Chat bubble */}
-      {chatBubble && (
-        <div className="chat-bubble-container">
-          <div className="chat-bubble">
-            <span className="chat-bubble-text">{chatBubble.text}</span>
-          </div>
         </div>
       )}
     </div>

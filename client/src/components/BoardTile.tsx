@@ -38,7 +38,10 @@ export default function BoardTile({ tile, players, owner, ownerColor, houses, ge
   return (
     <div
       className={`tile tile-${tile.type} ${isHighlighted ? 'tile-highlighted' : ''} ${owner ? 'tile-owned' : ''}`}
-      style={owner && ownerColor ? { boxShadow: `inset 0 0 0 2px ${ownerColor}` } as any : undefined}
+      style={owner && ownerColor ? {
+        borderColor: ownerColor,
+        background: `linear-gradient(135deg, ${ownerColor}18, ${ownerColor}10, var(--tile-bg))`,
+      } as any : undefined}
       title={`${tile.name} - ${tile.nameEn}`}
       onClick={onClick}
     >

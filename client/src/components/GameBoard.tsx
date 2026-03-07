@@ -367,22 +367,33 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
                     </button>
                   )}
                   {isMyTurn && gameState.phase === 'paying_rent' && (
-                    <button className="roll-center-btn pay-rent-center" onClick={() => socket.emit('pay_rent')}>
-                      💸 ادفع الإيجار
-                    </button>
-                  )}
-                  {isMyTurn && gameState.phase === 'managing' && (
-                    <div className="center-manage-btns">
-                      {myPlayer && myPlayer.properties.length > 0 && (
-                        <button className="roll-center-btn build-center" onClick={() => setShowBuild(true)}>
-                          🏗️ بناء
-                        </button>
-                      )}
-                      <button className="roll-center-btn end-turn-center" onClick={() => socket.emit('end_turn')}>
-                        ✅ انهاء الدور
-                      </button>
+                    <div className="center-paying-rent">
+                      <div className="paying-rent-spinner" />
+                      <div className="paying-rent-text">💸 جاري دفع الإيجار...</div>
                     </div>
                   )}
+                  {isMyTurn && gameState.phase === 'managing' && (() => {
+                    // Check if player has any complete sets to build on
+                    const hasCompleteSets = myPlayer ? myPlayer.properties.some(id => {
+                      const t = BOARD_TILES[id];
+                      if (!t?.group || ['station', 'utility', 'special'].includes(t.group)) return false;
+                      const groupTiles = BOARD_TILES.filter(bt => bt.group === t.group);
+                      return groupTiles.every(gt => myPlayer.properties.includes(gt.id))
+                        && groupTiles.some(gt => (myPlayer.houses[gt.id] || 0) < 5);
+                    }) : false;
+                    return (
+                      <div className="center-manage-btns">
+                        {hasCompleteSets && (
+                          <button className="roll-center-btn build-center" onClick={() => setShowBuild(true)}>
+                            🏗️ بناء
+                          </button>
+                        )}
+                        <button className="roll-center-btn end-turn-center" onClick={() => socket.emit('end_turn')}>
+                          ✅ انهاء الدور
+                        </button>
+                      </div>
+                    );
+                  })()}
                   {!isMyTurn && (
                     <div className="center-waiting">⏳ دور {currentPlayer?.name}</div>
                   )}

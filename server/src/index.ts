@@ -23,7 +23,7 @@ import {
 } from './gameEngine.js';
 import {
   STARTING_MONEY, JAIL_BAIL, TURN_TIMER_SECONDS, PLAYER_PIECES,
-  LUCKY_CHEST_CARDS, LUCK_CARDS, SWITCH_POSITION_COST,
+  LUCKY_CHEST_CARDS, LUCK_CARDS, SWITCH_POSITION_COST, BOARD_TILES,
 } from './gameData.js';
 import { BotAI } from './botAI.js';
 import { createAdminRouter } from './adminRoutes.js';
@@ -127,6 +127,62 @@ function clearTurnTimer(roomId: string) {
   if (timer) {
     clearTimeout(timer);
     turnTimers.delete(roomId);
+  }
+}
+
+// Check if player has any complete color sets they can build on
+function playerHasCompleteSets(game: GameState, player: Player): boolean {
+  const groups = new Set<string>();
+  for (const tileId of player.properties) {
+    const tile = getTileData(tileId);
+    if (tile.property && !['station', 'utility', 'special'].includes(tile.property.group)) {
+      groups.add(tile.property.group);
+    }
+  }
+  for (const group of groups) {
+    const groupTiles = BOARD_TILES.filter(t => t.property?.group === group);
+    if (groupTiles.every(t => player.properties.includes(t.id))) {
+      // Check if at least one tile can still be built on
+      if (groupTiles.some(t => (player.houses[t.id] || 0) < 5)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Auto-pay rent for human players (with a brief visible delay)
+function doPayRent(roomId: string, game: GameState, player: Player) {
+  const result = payRent(game, player, game.dice?.total || 7);
+  if (result) {
+    io.to(roomId).emit('rent_paid', {
+      payerId: player.id,
+      ownerId: result.ownerId,
+      amount: result.amount,
+      tileId: player.position,
+    });
+  }
+  // After paying rent, auto-end if nothing to do
+  autoEndIfNothingToDo(roomId, game, player);
+}
+
+// After an action, if player has no complete sets → auto end turn
+function autoEndIfNothingToDo(roomId: string, game: GameState, player: Player) {
+  if (playerHasCompleteSets(game, player)) {
+    game.phase = 'managing';
+    broadcastGameState(roomId);
+  } else {
+    // Nothing to build - skip managing phase entirely
+    game.phase = 'managing'; // briefly set for state consistency
+    broadcastGameState(roomId);
+    // Auto end turn after a short delay so player sees what happened
+    setTimeout(() => {
+      const g = games.get(roomId);
+      if (!g) return;
+      if (g.phase === 'managing' && getCurrentPlayer(g).id === player.id) {
+        endTurn(roomId, g);
+      }
+    }, 1200);
   }
 }
 
@@ -282,6 +338,14 @@ function handleRollDice(roomId: string, game: GameState, player: Player) {
 
     if (player.isBot) {
       setTimeout(() => processBotPhase(roomId), 2000);
+    } else if (nextPhase === 'paying_rent') {
+      // Auto-pay rent for human players after a visible delay
+      setTimeout(() => {
+        const g2 = games.get(roomId);
+        if (!g2 || g2.phase !== 'paying_rent') return;
+        if (getCurrentPlayer(g2).id !== player.id) return;
+        doPayRent(roomId, g2, player);
+      }, 2000);
     }
   }, 1200);
 }
@@ -634,8 +698,8 @@ io.on('connection', (socket) => {
     if (buyProperty(game, player)) {
       io.to(roomId).emit('property_bought', { playerId: player.id, tileId: player.position });
     }
-    game.phase = 'managing';
-    broadcastGameState(roomId);
+    // After buying, auto-end turn if no complete sets to build on
+    autoEndIfNothingToDo(roomId, game, player);
   });
 
   socket.on('skip_buy', () => {
@@ -647,11 +711,12 @@ io.on('connection', (socket) => {
     const player = getCurrentPlayer(game);
     if (player.socketId !== socket.id) return;
 
-    game.phase = 'managing';
-    broadcastGameState(roomId);
+    // After skipping, auto-end turn if nothing to do
+    autoEndIfNothingToDo(roomId, game, player);
   });
 
   socket.on('pay_rent', () => {
+    // This is now handled automatically, but keep for backwards compat
     const roomId = playerRoomMap.get(socket.id);
     if (!roomId) return;
     const game = games.get(roomId);
@@ -660,17 +725,7 @@ io.on('connection', (socket) => {
     const player = getCurrentPlayer(game);
     if (player.socketId !== socket.id) return;
 
-    const result = payRent(game, player, game.dice?.total || 7);
-    if (result) {
-      io.to(roomId).emit('rent_paid', {
-        payerId: player.id,
-        ownerId: result.ownerId,
-        amount: result.amount,
-        tileId: player.position,
-      });
-    }
-    game.phase = 'managing';
-    broadcastGameState(roomId);
+    doPayRent(roomId, game, player);
   });
 
   socket.on('build_house', (tileId) => {

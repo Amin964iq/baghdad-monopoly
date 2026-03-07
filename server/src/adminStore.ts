@@ -45,7 +45,16 @@ export async function initAdmin(email: string, password: string): Promise<void> 
 
 export async function verifyAdmin(email: string, password: string): Promise<boolean> {
   const creds = getAdminCredentials();
-  if (!creds) return false;
+  if (!creds) {
+    // Fallback: check userStore for admin with username+PIN
+    try {
+      const { loginUser, isAdmin } = await import('./userStore.js');
+      const user = loginUser(email, password);
+      return user !== null && isAdmin(email);
+    } catch {
+      return false;
+    }
+  }
   if (creds.email !== email) return false;
   return bcrypt.compare(password, creds.passwordHash);
 }

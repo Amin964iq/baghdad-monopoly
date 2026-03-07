@@ -46,6 +46,24 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
 
   const isHost = playerId === room.hostId;
 
+  // Turn timer countdown
+  const [turnTimeLeft, setTurnTimeLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!gameState?.turnStartedAt || !gameState?.settings?.turnTimerSeconds) {
+      setTurnTimeLeft(null);
+      return;
+    }
+    const totalMs = gameState.settings.turnTimerSeconds * 1000;
+    const update = () => {
+      const elapsed = Date.now() - gameState.turnStartedAt!;
+      const remaining = Math.max(0, Math.ceil((totalMs - elapsed) / 1000));
+      setTurnTimeLeft(remaining);
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [gameState?.turnStartedAt, gameState?.settings?.turnTimerSeconds]);
+
   // Sound effects for events
   const prevPhaseRef = useRef<string>('');
   const prevEventRef = useRef<string>('');
@@ -360,6 +378,11 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
                 <>
                   <div className="center-logo">🏛️</div>
                   <div className="center-title">لعبة بغداد</div>
+                  {turnTimeLeft !== null && gameState.phase !== 'game_over' && (
+                    <div className={`turn-timer ${turnTimeLeft <= 10 ? 'turn-timer-urgent' : ''}`}>
+                      ⏱️ {turnTimeLeft}s
+                    </div>
+                  )}
                   <DiceDisplay dice={gameState.dice} />
                   {isMyTurn && gameState.phase === 'rolling' && (
                     <button className="roll-center-btn" onClick={() => socket.emit('roll_dice')}>
@@ -373,7 +396,6 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
                     </div>
                   )}
                   {isMyTurn && gameState.phase === 'managing' && (() => {
-                    // Check if player has any complete sets to build on
                     const hasCompleteSets = myPlayer ? myPlayer.properties.some(id => {
                       const t = BOARD_TILES[id];
                       if (!t?.group || ['station', 'utility', 'special'].includes(t.group)) return false;
@@ -381,13 +403,19 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
                       return groupTiles.every(gt => myPlayer.properties.includes(gt.id))
                         && groupTiles.some(gt => (myPlayer.houses[gt.id] || 0) < 5);
                     }) : false;
+                    if (!hasCompleteSets) {
+                      return (
+                        <div className="center-paying-rent">
+                          <div className="paying-rent-spinner" />
+                          <div className="paying-rent-text">⏳ جاري انهاء الدور...</div>
+                        </div>
+                      );
+                    }
                     return (
                       <div className="center-manage-btns">
-                        {hasCompleteSets && (
-                          <button className="roll-center-btn build-center" onClick={() => setShowBuild(true)}>
-                            🏗️ بناء
-                          </button>
-                        )}
+                        <button className="roll-center-btn build-center" onClick={() => setShowBuild(true)}>
+                          🏗️ بناء
+                        </button>
                         <button className="roll-center-btn end-turn-center" onClick={() => socket.emit('end_turn')}>
                           ✅ انهاء الدور
                         </button>
@@ -554,15 +582,157 @@ export default function GameBoard({ room, gameState, playerId, chatMessages, eve
           </div>
         </div>
       )}
-      {gameState.phase === 'game_over' && (
-        <div className="game-over-overlay">
-          <div className="game-over-card">
-            <h1>🏆 انتهت اللعبة!</h1>
-            <h2>الفائز: {gameState.players.find(p => p.id === gameState.winner)?.name || 'لا أحد'}</h2>
-            <p>الف مبروك!</p>
+      {gameState.phase === 'game_over' && (() => {
+        const winner = gameState.players.find(p => p.id === gameState.winner);
+        const stats = gameState.gameStats;
+        const players = gameState.players;
+
+        // Fun stats calculations
+        const mostRentPayer = stats ? players.reduce((best, p) => {
+          const paid = stats.rentPaid[p.id] || 0;
+          return paid > (stats.rentPaid[best.id] || 0) ? p : best;
+        }, players[0]) : null;
+
+        const mostRentReceiver = stats ? players.reduce((best, p) => {
+          const received = stats.rentReceived[p.id] || 0;
+          return received > (stats.rentReceived[best.id] || 0) ? p : best;
+        }, players[0]) : null;
+
+        const mostDoublesPlayer = stats ? players.reduce((best, p) => {
+          const d = stats.doublesRolled[p.id] || 0;
+          return d > (stats.doublesRolled[best.id] || 0) ? p : best;
+        }, players[0]) : null;
+
+        const mostJailedPlayer = stats ? players.reduce((best, p) => {
+          const j = stats.timesInJail[p.id] || 0;
+          return j > (stats.timesInJail[best.id] || 0) ? p : best;
+        }, players[0]) : null;
+
+        const biggestBuilder = stats ? players.reduce((best, p) => {
+          const h = stats.moneySpentOnHouses[p.id] || 0;
+          return h > (stats.moneySpentOnHouses[best.id] || 0) ? p : best;
+        }, players[0]) : null;
+
+        // Most landed-on tile
+        let hotTileId = 0;
+        let hotTileCount = 0;
+        let coldTileId = 0;
+        let coldTileCount = Infinity;
+        if (stats) {
+          const allLandings: Record<number, number> = {};
+          for (const pLandings of Object.values(stats.tileLandings)) {
+            for (const [tid, count] of Object.entries(pLandings)) {
+              allLandings[Number(tid)] = (allLandings[Number(tid)] || 0) + count;
+            }
+          }
+          for (const [tid, count] of Object.entries(allLandings)) {
+            if (count > hotTileCount) { hotTileCount = count; hotTileId = Number(tid); }
+            if (count < coldTileCount) { coldTileCount = count; coldTileId = Number(tid); }
+          }
+        }
+
+        // Biggest single rent payment
+        let biggestRentPair = '';
+        let biggestRentAmount = 0;
+        if (stats?.rentPaidTo) {
+          for (const [payerId, receivers] of Object.entries(stats.rentPaidTo)) {
+            for (const [receiverId, amount] of Object.entries(receivers)) {
+              if (amount > biggestRentAmount) {
+                biggestRentAmount = amount;
+                const payer = players.find(p => p.id === payerId);
+                const receiver = players.find(p => p.id === receiverId);
+                biggestRentPair = `${payer?.name || '?'} ← ${receiver?.name || '?'}`;
+              }
+            }
+          }
+        }
+
+        const hotTile = BOARD_TILES[hotTileId];
+        const coldTile = BOARD_TILES[coldTileId];
+
+        return (
+          <div className="game-over-overlay">
+            <div className="game-over-card">
+              <div className="game-over-trophy">🏆</div>
+              <h1 className="game-over-title">انتهت اللعبة!</h1>
+              <h2 className="game-over-winner">🎉 {winner?.name || 'لا أحد'} 🎉</h2>
+              <p className="game-over-subtitle">الف مبروك!</p>
+
+              {stats && (
+                <div className="fun-stats">
+                  <h3 className="fun-stats-title">📊 احصائيات المباراة</h3>
+                  <div className="fun-stats-grid">
+                    {mostRentPayer && (stats.rentPaid[mostRentPayer.id] || 0) > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">💸</div>
+                        <div className="fun-stat-label">اكثر دافع ايجار</div>
+                        <div className="fun-stat-value">{mostRentPayer.name}</div>
+                        <div className="fun-stat-detail">{formatMoney(stats.rentPaid[mostRentPayer.id] || 0)}</div>
+                      </div>
+                    )}
+                    {mostRentReceiver && (stats.rentReceived[mostRentReceiver.id] || 0) > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">🤑</div>
+                        <div className="fun-stat-label">اكثر جامع ايجار</div>
+                        <div className="fun-stat-value">{mostRentReceiver.name}</div>
+                        <div className="fun-stat-detail">{formatMoney(stats.rentReceived[mostRentReceiver.id] || 0)}</div>
+                      </div>
+                    )}
+                    {mostDoublesPlayer && (stats.doublesRolled[mostDoublesPlayer.id] || 0) > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">🎲</div>
+                        <div className="fun-stat-label">ملك الدوبل</div>
+                        <div className="fun-stat-value">{mostDoublesPlayer.name}</div>
+                        <div className="fun-stat-detail">{stats.doublesRolled[mostDoublesPlayer.id]} مرات</div>
+                      </div>
+                    )}
+                    {mostJailedPlayer && (stats.timesInJail[mostJailedPlayer.id] || 0) > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">🔒</div>
+                        <div className="fun-stat-label">اكثر واحد سجنوه</div>
+                        <div className="fun-stat-value">{mostJailedPlayer.name}</div>
+                        <div className="fun-stat-detail">{stats.timesInJail[mostJailedPlayer.id]} مرات</div>
+                      </div>
+                    )}
+                    {biggestBuilder && (stats.moneySpentOnHouses[biggestBuilder.id] || 0) > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">🏗️</div>
+                        <div className="fun-stat-label">اكبر معمّر</div>
+                        <div className="fun-stat-value">{biggestBuilder.name}</div>
+                        <div className="fun-stat-detail">{formatMoney(stats.moneySpentOnHouses[biggestBuilder.id] || 0)}</div>
+                      </div>
+                    )}
+                    {hotTile && hotTileCount > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">🔥</div>
+                        <div className="fun-stat-label">اكثر ارض وقفوا عليها</div>
+                        <div className="fun-stat-value">{hotTile.name}</div>
+                        <div className="fun-stat-detail">{hotTileCount} مرات</div>
+                      </div>
+                    )}
+                    {coldTile && coldTileCount < Infinity && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">🧊</div>
+                        <div className="fun-stat-label">اقل ارض وقفوا عليها</div>
+                        <div className="fun-stat-value">{coldTile.name}</div>
+                        <div className="fun-stat-detail">{coldTileCount} مرات</div>
+                      </div>
+                    )}
+                    {biggestRentAmount > 0 && (
+                      <div className="fun-stat-card">
+                        <div className="fun-stat-icon">💰</div>
+                        <div className="fun-stat-label">اكبر مبلغ ايجار بين لاعبين</div>
+                        <div className="fun-stat-value">{biggestRentPair}</div>
+                        <div className="fun-stat-detail">{formatMoney(biggestRentAmount)}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

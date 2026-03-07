@@ -3,6 +3,9 @@ dist/
 client/dist/
 server/dist/
 paused_games/
+server/data/
 .env
 *.log
 .DS_Store
+*.png
+*.jpg

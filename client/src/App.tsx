@@ -3,6 +3,18 @@ import { socket } from './socket';
 import Lobby from './components/Lobby';
 import GameBoard from './components/GameBoard';
 import AdminDashboard from './components/AdminDashboard';
+import LoginScreen from './components/LoginScreen';
+
+export interface GameStats {
+  rentPaid: Record<string, number>;
+  rentReceived: Record<string, number>;
+  rentPaidTo: Record<string, Record<string, number>>;
+  tileLandings: Record<string, Record<number, number>>;
+  propertiesBought: Record<string, number>;
+  doublesRolled: Record<string, number>;
+  timesInJail: Record<string, number>;
+  moneySpentOnHouses: Record<string, number>;
+}
 
 export interface GameState {
   id: string;
@@ -18,8 +30,10 @@ export interface GameState {
   chatMessages: ChatMessage[];
   events: GameEvent[];
   turnTimer: number | null;
+  turnStartedAt: number | null;
   settings: any;
   winner: string | null;
+  gameStats?: GameStats;
 }
 
 export interface Player {
@@ -96,16 +110,46 @@ export interface GameEvent {
   data?: any;
 }
 
+export interface UserSession {
+  username: string;
+  isAdmin: boolean;
+}
+
 function AppRouter() {
+  const [user, setUser] = useState<UserSession | null>(() => {
+    const saved = localStorage.getItem('baghdad_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const handleLogin = (session: UserSession) => {
+    setUser(session);
+    localStorage.setItem('baghdad_user', JSON.stringify(session));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('baghdad_user');
+    localStorage.removeItem('baghdad_pin');
+    localStorage.removeItem('admin_token');
+  };
+
+  if (!user) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   if (window.location.pathname === '/admin') {
+    if (!user.isAdmin) {
+      window.location.pathname = '/';
+      return null;
+    }
     return <AdminDashboard />;
   }
-  return <GameApp />;
+  return <GameApp user={user} onLogout={handleLogout} />;
 }
 
 export default AppRouter;
 
-function GameApp() {
+function GameApp({ user, onLogout }: { user: UserSession; onLogout: () => void }) {
   const [connected, setConnected] = useState(false);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -191,7 +235,7 @@ function GameApp() {
 
   // Not in a room yet - show lobby
   if (!room) {
-    return <Lobby onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} onResumeGame={handleResumeGame} connected={connected} />;
+    return <Lobby onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} onResumeGame={handleResumeGame} connected={connected} user={user} onLogout={onLogout} />;
   }
 
   // In room, game not started - show waiting room

@@ -12,7 +12,7 @@ import {
 } from './gameData.js';
 import type { TileData, CardData, CardEffect } from './gameData.js';
 import type {
-  GameState, Player, DiceResult, GamePhase, GameEvent,
+  GameState, GameStats, Player, DiceResult, GamePhase, GameEvent,
   GameSettings, RoomPlayer, TradeOffer,
 } from './types.js';
 
@@ -45,6 +45,17 @@ export function createGameState(roomId: string, hostId: string, players: RoomPla
     socketId: p.socketId,
   }));
 
+  const gameStats: GameStats = {
+    rentPaid: {},
+    rentReceived: {},
+    rentPaidTo: {},
+    tileLandings: {},
+    propertiesBought: {},
+    doublesRolled: {},
+    timesInJail: {},
+    moneySpentOnHouses: {},
+  };
+
   return {
     id: roomId,
     hostId,
@@ -63,9 +74,11 @@ export function createGameState(roomId: string, hostId: string, players: RoomPla
     chatMessages: [],
     events: [],
     turnTimer: null,
+    turnStartedAt: Date.now(),
     settings,
     winner: null,
     createdAt: Date.now(),
+    gameStats,
   };
 }
 
@@ -93,12 +106,18 @@ export function addEvent(state: GameState, type: string, message: string, messag
   return event;
 }
 
+function trackLanding(state: GameState, playerId: string, tileId: number) {
+  if (!state.gameStats.tileLandings[playerId]) state.gameStats.tileLandings[playerId] = {};
+  state.gameStats.tileLandings[playerId][tileId] = (state.gameStats.tileLandings[playerId][tileId] || 0) + 1;
+}
+
 export function movePlayer(state: GameState, player: Player, steps: number): { passedGo: boolean; newPosition: number } {
   const oldPos = player.position;
   const newPos = (oldPos + steps) % 40;
   const passedGo = steps > 0 && newPos < oldPos;
 
   player.position = newPos;
+  trackLanding(state, player.id, newPos);
 
   if (passedGo) {
     player.money += GO_PASS_BONUS;
@@ -214,6 +233,7 @@ export function buildHouse(state: GameState, player: Player, tileId: number): bo
 
   player.money -= tile.property.houseCost;
   player.houses[tileId] = (player.houses[tileId] || 0) + 1;
+  state.gameStats.moneySpentOnHouses[player.id] = (state.gameStats.moneySpentOnHouses[player.id] || 0) + tile.property.houseCost;
 
   const houses = player.houses[tileId];
   const buildingType = houses === 5 ? 'فندق' : 'بيت';
@@ -248,6 +268,7 @@ export function sendToJail(state: GameState, player: Player): void {
   player.inJail = true;
   player.jailTurns = 0;
   state.doublesCount = 0;
+  state.gameStats.timesInJail[player.id] = (state.gameStats.timesInJail[player.id] || 0) + 1;
   addEvent(state, 'jail', `${player.name} was sent to jail!`,
     `${player.name} راح للسجن!`);
 }
@@ -452,6 +473,9 @@ export function buyProperty(state: GameState, player: Player): boolean {
   player.money -= tile.property.price;
   player.properties.push(tile.id);
 
+  // Track stats
+  state.gameStats.propertiesBought[player.id] = (state.gameStats.propertiesBought[player.id] || 0) + 1;
+
   addEvent(state, 'buy', `${player.name} bought ${tile.nameEn} for ${tile.property.price.toLocaleString()} IQD`,
     `${player.name} اشترى ${tile.name} بـ ${tile.property.price.toLocaleString()} دينار`);
 
@@ -478,6 +502,12 @@ export function payRent(state: GameState, payer: Player, diceTotal: number): { o
   addEvent(state, 'rent', `${payer.name} paid ${actualPayment.toLocaleString()} IQD rent to ${owner.name}`,
     `${payer.name} دفع ${actualPayment.toLocaleString()} دينار إيجار لـ ${owner.name}`);
 
+  // Track stats
+  state.gameStats.rentPaid[payer.id] = (state.gameStats.rentPaid[payer.id] || 0) + actualPayment;
+  state.gameStats.rentReceived[owner.id] = (state.gameStats.rentReceived[owner.id] || 0) + actualPayment;
+  if (!state.gameStats.rentPaidTo[payer.id]) state.gameStats.rentPaidTo[payer.id] = {};
+  state.gameStats.rentPaidTo[payer.id][owner.id] = (state.gameStats.rentPaidTo[payer.id][owner.id] || 0) + actualPayment;
+
   return { ownerId: owner.id, amount: actualPayment };
 }
 
@@ -497,8 +527,8 @@ export function switchPositions(state: GameState, player: Player, targetId: stri
   return true;
 }
 
-export function checkBankrupt(player: Player): boolean {
-  return player.money <= -500000 && !player.bankrupt;
+export function checkBankrupt(player: Player, threshold: number = -500000): boolean {
+  return player.money <= threshold && !player.bankrupt;
 }
 
 export function bankruptPlayer(state: GameState, player: Player): void {
@@ -508,6 +538,30 @@ export function bankruptPlayer(state: GameState, player: Player): void {
   player.houses = {};
   addEvent(state, 'bankrupt', `${player.name} went bankrupt!`,
     `${player.name} أفلس!`);
+}
+
+export function sellProperty(state: GameState, player: Player, tileId: number): boolean {
+  if (!player.properties.includes(tileId)) return false;
+  const tile = getTileData(tileId);
+  if (!tile.property) return false;
+
+  // Can't sell if there are houses on any property in the group
+  const group = tile.property.group;
+  if (!['station', 'utility', 'special'].includes(group)) {
+    const groupTiles = BOARD_TILES.filter(t => t.property?.group === group);
+    const hasHouses = groupTiles.some(t => (player.houses[t.id] || 0) > 0);
+    if (hasHouses) return false;
+  }
+
+  const sellPrice = Math.floor(tile.property.price / 2);
+  player.money += sellPrice;
+  player.properties = player.properties.filter(id => id !== tileId);
+  delete player.houses[tileId];
+
+  addEvent(state, 'sell', `${player.name} sold ${tile.nameEn} for ${sellPrice.toLocaleString()} IQD`,
+    `${player.name} باع ${tile.name} بـ ${sellPrice.toLocaleString()} دينار`);
+
+  return true;
 }
 
 export function getActivePlayers(state: GameState): Player[] {

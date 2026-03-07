@@ -1,15 +1,18 @@
 import { useState } from 'react';
+import type { UserSession } from '../App';
 
 interface LobbyProps {
   onCreateRoom: (playerName: string, roomName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onResumeGame: (pauseCode: string, playerName: string) => void;
   connected: boolean;
+  user: UserSession;
+  onLogout: () => void;
 }
 
-export default function Lobby({ onCreateRoom, onJoinRoom, onResumeGame, connected }: LobbyProps) {
+export default function Lobby({ onCreateRoom, onJoinRoom, onResumeGame, connected, user, onLogout }: LobbyProps) {
   const [mode, setMode] = useState<'menu' | 'create' | 'join' | 'resume'>('menu');
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(user.username);
   const [roomName, setRoomName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [resumeCode, setResumeCode] = useState('');
@@ -123,6 +126,15 @@ export default function Lobby({ onCreateRoom, onJoinRoom, onResumeGame, connecte
 
   return (
     <div className="lobby">
+      {user.isAdmin && (
+        <button className="lobby-admin-btn" onClick={() => { window.location.pathname = '/admin'; }}>
+          ⚙️ لوحة التحكم
+        </button>
+      )}
+      <div className="login-user-info">
+        <strong>{user.username}</strong>
+        <button className="login-logout-btn" onClick={onLogout}>خروج</button>
+      </div>
       <div className="lobby-card">
         <div className="lobby-logo">🏛️</div>
         <h1 className="lobby-title">لعبة بغداد</h1>

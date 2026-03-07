@@ -82,6 +82,17 @@ export interface DiceResult {
   isDouble: boolean;
 }
 
+export interface GameStats {
+  rentPaid: Record<string, number>;         // playerId -> total rent paid
+  rentReceived: Record<string, number>;     // playerId -> total rent received
+  rentPaidTo: Record<string, Record<string, number>>; // payerId -> { receiverId -> amount }
+  tileLandings: Record<string, Record<number, number>>; // playerId -> { tileId -> count }
+  propertiesBought: Record<string, number>; // playerId -> count
+  doublesRolled: Record<string, number>;    // playerId -> count
+  timesInJail: Record<string, number>;      // playerId -> count
+  moneySpentOnHouses: Record<string, number>; // playerId -> total
+}
+
 export interface GameState {
   id: string;
   hostId: string;
@@ -100,15 +111,18 @@ export interface GameState {
   chatMessages: ChatMessage[];
   events: GameEvent[];
   turnTimer: number | null;
+  turnStartedAt: number | null;
   settings: GameSettings;
   winner: string | null;
   createdAt: number;
+  gameStats: GameStats;
 }
 
 export interface GameSettings {
   maxPlayers: number;
   startingMoney: number;
   turnTimerSeconds: number;
+  bankruptThreshold: number; // negative money threshold for bankruptcy (e.g. -500000)
   botsEnabled: boolean;
   botDifficulty: 'easy' | 'normal' | 'smart';
 }
@@ -146,6 +160,7 @@ export interface ServerToClientEvents {
   dice_rolled: (result: DiceResult & { playerId: string }) => void;
   player_moved: (data: { playerId: string; from: number; to: number; passedGo: boolean }) => void;
   property_bought: (data: { playerId: string; tileId: number }) => void;
+  property_sold: (data: { playerId: string; tileId: number }) => void;
   rent_paid: (data: { payerId: string; ownerId: string; amount: number; tileId: number }) => void;
   house_built: (data: { playerId: string; tileId: number; houses: number }) => void;
   player_jailed: (playerId: string) => void;
@@ -170,6 +185,7 @@ export interface ClientToServerEvents {
   skip_buy: () => void;
   build_house: (tileId: number) => void;
   sell_house: (tileId: number) => void;
+  sell_property: (tileId: number) => void;
   pay_rent: () => void;
   jail_pay: () => void;
   jail_card: () => void;
@@ -182,6 +198,7 @@ export interface ClientToServerEvents {
   respond_trade: (data: { tradeId: string; accept: boolean }) => void;
   cancel_trade: (tradeId: string) => void;
   acknowledge_card: () => void;
+  update_settings: (settings: Partial<GameSettings>) => void;
   end_game: () => void;
   pause_game: () => void;
   resume_game: (data: { pauseCode: string; playerName: string }) => void;

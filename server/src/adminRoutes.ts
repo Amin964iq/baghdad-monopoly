@@ -65,6 +65,10 @@ function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   }
 }
 
+export function generateAdminToken(username: string): string {
+  return jwt.sign({ role: 'admin', email: username }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+}
+
 // Create router with access to game state
 export function createAdminRouter(getActiveGames: () => any[], broadcastToGame?: (gameId: string, event: string, data: any) => void) {
   const router = Router();
@@ -117,6 +121,27 @@ export function createAdminRouter(getActiveGames: () => any[], broadcastToGame?:
     resetLoginAttempts(ip);
     const token = jwt.sign({ role: 'admin', email }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
     res.json({ token, expiresIn: TOKEN_EXPIRY });
+  });
+
+  // ===== Session Login (from game account) =====
+  router.post('/session-login', async (req: Request, res: Response) => {
+    const { username, pin } = req.body;
+    if (!username || !pin) {
+      res.status(400).json({ error: 'Username and PIN required' });
+      return;
+    }
+    try {
+      const { loginUser, isAdmin: checkAdmin } = await import('./userStore.js');
+      const user = loginUser(username, pin);
+      if (!user || !checkAdmin(username)) {
+        res.status(401).json({ error: 'Not an admin' });
+        return;
+      }
+      const token = jwt.sign({ role: 'admin', email: username }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+      res.json({ token, expiresIn: TOKEN_EXPIRY });
+    } catch {
+      res.status(500).json({ error: 'Auth failed' });
+    }
   });
 
   // ===== Check if setup needed =====

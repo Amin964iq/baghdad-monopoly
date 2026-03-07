@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API_BASE = import.meta.env.PROD ? '/api/admin' : 'http://localhost:3001/api/admin';
-
 interface AdminState {
   token: string | null;
-  needsSetup: boolean;
+  loading: boolean;
   config: any;
   games: any[];
   analytics: any;
@@ -14,19 +12,17 @@ interface AdminState {
 export default function AdminDashboard() {
   const [state, setState] = useState<AdminState>({
     token: localStorage.getItem('admin_token'),
-    needsSetup: false,
+    loading: true,
     config: null,
     games: [],
     analytics: null,
     activeTab: 'settings',
   });
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const api = useCallback(async (path: string, options?: RequestInit) => {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`/api/admin${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -42,11 +38,9 @@ export default function AdminDashboard() {
     return res.json();
   }, [state.token]);
 
-  // Check status on mount
+  // Check token on mount
   useEffect(() => {
-    api('/status').then(data => {
-      setState(s => ({ ...s, needsSetup: data.needsSetup }));
-    }).catch(() => {});
+    setState(s => ({ ...s, loading: false }));
   }, []);
 
   // Load data when authenticated
@@ -59,38 +53,6 @@ export default function AdminDashboard() {
     ]).catch(() => {});
   }, [state.token, api]);
 
-  const handleSetup = async () => {
-    try {
-      await api('/setup', {
-        method: 'POST',
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
-      });
-      setSuccess('Admin account created! Now login.');
-      setState(s => ({ ...s, needsSetup: false }));
-    } catch (e: any) {
-      setError(e.message);
-    }
-  };
-
-  const handleLogin = async () => {
-    try {
-      setError('');
-      const data = await api('/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
-      });
-      if (data.token) {
-        localStorage.setItem('admin_token', data.token);
-        setState(s => ({ ...s, token: data.token }));
-        setSuccess('Logged in!');
-      } else {
-        setError(data.error || 'Login failed');
-      }
-    } catch (e: any) {
-      setError(e.message || 'Login failed');
-    }
-  };
-
   const updateConfig = async (section: string, data: any) => {
     try {
       const result = await api(`/config/${section}`, {
@@ -98,7 +60,6 @@ export default function AdminDashboard() {
         body: JSON.stringify(data),
       });
       if (result.success) {
-        // Reload config
         const config = await api('/config');
         setState(s => ({ ...s, config }));
         setSuccess('Saved!');
@@ -138,35 +99,20 @@ export default function AdminDashboard() {
     setState(s => ({ ...s, games }));
   };
 
-  // === LOGIN / SETUP SCREEN ===
+  // Loading state
+  if (state.loading) {
+    return <div className="admin-loading">جاري التحميل...</div>;
+  }
+
+  // Not authenticated - show error with back button
   if (!state.token) {
     return (
       <div className="admin-login">
         <div className="admin-login-card">
           <h1>🔐 لوحة التحكم</h1>
-          <h2>Baghdad Monopoly Admin</h2>
-          {error && <div className="admin-error">{error}</div>}
-          {success && <div className="admin-success">{success}</div>}
-          <input
-            placeholder="البريد الإلكتروني"
-            type="email"
-            value={loginEmail}
-            onChange={e => setLoginEmail(e.target.value)}
-            className="admin-input"
-          />
-          <input
-            placeholder="كلمة المرور"
-            type="password"
-            value={loginPassword}
-            onChange={e => setLoginPassword(e.target.value)}
-            className="admin-input"
-            onKeyDown={e => e.key === 'Enter' && (state.needsSetup ? handleSetup() : handleLogin())}
-          />
-          <button
-            className="admin-btn primary"
-            onClick={state.needsSetup ? handleSetup : handleLogin}
-          >
-            {state.needsSetup ? 'انشاء حساب المدير' : 'تسجيل الدخول'}
+          <p style={{ color: '#ff6b6b', marginBottom: 16 }}>لا يمكن الدخول - تأكد من تسجيل الدخول بحساب المدير</p>
+          <button className="admin-btn primary" onClick={() => { window.location.pathname = '/'; }}>
+            رجوع للصفحة الرئيسية
           </button>
         </div>
       </div>
@@ -205,11 +151,8 @@ export default function AdminDashboard() {
             {tab.label}
           </button>
         ))}
-        <button className="admin-tab logout" onClick={() => {
-          localStorage.removeItem('admin_token');
-          setState(s => ({ ...s, token: null }));
-        }}>
-          🚪 تسجيل الخروج
+        <button className="admin-tab logout" onClick={() => { window.location.pathname = '/'; }}>
+          🚪 رجوع للعبة
         </button>
       </div>
 

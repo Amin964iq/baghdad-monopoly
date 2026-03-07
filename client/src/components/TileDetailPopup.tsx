@@ -1,6 +1,6 @@
 import type { Player } from '../App';
 import type { TileData } from '../gameData';
-import { GROUP_COLORS, formatMoney } from '../gameData';
+import { GROUP_COLORS, formatMoney, LUCKY_CHEST_CARDS, LUCK_CARDS } from '../gameData';
 
 interface Props {
   tile: TileData;
@@ -158,9 +158,40 @@ export default function TileDetailPopup({ tile, owner, ownerColor, houses, onClo
           </div>
         )}
 
-        {!isProperty && (
+        {!isProperty && tile.type !== 'lucky_chest' && tile.type !== 'luck_card' && (
           <div className="tile-detail-section">
             <div className="detail-info">{TILE_TYPE_LABELS[tile.type]}</div>
+          </div>
+        )}
+
+        {/* Card deck contents */}
+        {tile.type === 'lucky_chest' && (
+          <div className="tile-detail-section">
+            <div className="detail-subtitle">📦 بطاقات صندوق اللعبة ({LUCKY_CHEST_CARDS.length} بطاقة)</div>
+            <div className="card-deck-list">
+              {LUCKY_CHEST_CARDS.map(card => (
+                <div key={card.id} className="card-deck-item">
+                  <span className="card-deck-title">{card.title}</span>
+                  <span className="card-deck-desc">{card.description}</span>
+                  <span className="card-deck-prob">{(100 / LUCKY_CHEST_CARDS.length).toFixed(0)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tile.type === 'luck_card' && (
+          <div className="tile-detail-section">
+            <div className="detail-subtitle">🔮 بطاقات الحظ ({LUCK_CARDS.length} بطاقة)</div>
+            <div className="card-deck-list">
+              {LUCK_CARDS.map(card => (
+                <div key={card.id} className="card-deck-item">
+                  <span className="card-deck-title">{card.title}</span>
+                  <span className="card-deck-desc">{card.description}</span>
+                  <span className="card-deck-prob">{(100 / LUCK_CARDS.length).toFixed(0)}%</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

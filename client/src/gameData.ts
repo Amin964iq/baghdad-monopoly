@@ -96,6 +96,59 @@ export function formatMoney(amount: number): string {
   return amount.toString();
 }
 
+// Card data for display in tile detail popup
+export interface CardInfo {
+  id: number;
+  title: string;
+  description: string;
+}
+
+export const LUCKY_CHEST_CARDS: CardInfo[] = [
+  { id: 1, title: 'تقدم إلى الانطلاق', description: 'تقدم إلى خانة الانطلاق واستلم 300,000' },
+  { id: 2, title: 'جائزة', description: 'ربحت جائزة! استلم 200,000 دينار' },
+  { id: 3, title: 'فاتورة كهرباء', description: 'ادفع فاتورة الكهرباء 50,000 دينار' },
+  { id: 4, title: 'من البنك', description: 'استلم 100,000 دينار من البنك' },
+  { id: 5, title: 'خروج من السجن', description: 'بطاقة خروج من السجن - احتفظ بها' },
+  { id: 6, title: 'غرامة', description: 'ادفع 150,000 للصندوق' },
+  { id: 7, title: 'عيد ميلاد', description: 'عيد ميلادك! استلم 50,000 من كل لاعب' },
+  { id: 8, title: 'أرباح تجارية', description: 'استلم 150,000 دينار أرباح تجارية' },
+  { id: 9, title: 'غرامة مرورية', description: 'ادفع 100,000 غرامة مرورية' },
+  { id: 10, title: 'تقدم', description: 'تقدم 3 خطوات' },
+  { id: 11, title: 'ميراث', description: 'استلم 250,000 ميراث' },
+  { id: 12, title: 'رسوم تسجيل', description: 'ادفع 75,000 رسوم تسجيل' },
+  { id: 13, title: 'مسابقة', description: 'فزت بالمسابقة! استلم 100,000' },
+  { id: 14, title: 'ترميمات', description: 'ادفع ترميمات: 40K لكل بيت و 115K لكل فندق' },
+  { id: 15, title: 'تراجع', description: 'تراجع 3 خطوات' },
+  { id: 16, title: 'استرداد ضريبي', description: 'استلم 50,000 استرداد ضريبي' },
+  { id: 17, title: 'مستشفى', description: 'ادفع 200,000 رسوم مستشفى' },
+  { id: 18, title: 'أقرب محطة', description: 'تقدم إلى أقرب محطة' },
+  { id: 19, title: 'أرباح أسهم', description: 'استلم 80,000 أرباح أسهم' },
+  { id: 20, title: 'دفع للاعبين', description: 'ادفع 25,000 لكل لاعب' },
+];
+
+export const LUCK_CARDS: CardInfo[] = [
+  { id: 1, title: 'سجن', description: 'روح للسجن مباشرة!' },
+  { id: 2, title: 'انطلاق', description: 'تقدم إلى خانة الانطلاق' },
+  { id: 3, title: 'ادفع للاعبين', description: 'ادفع 50,000 لكل لاعب' },
+  { id: 4, title: 'استلم من اللاعبين', description: 'استلم 50,000 من كل لاعب' },
+  { id: 5, title: 'خروج من السجن', description: 'بطاقة خروج من السجن' },
+  { id: 6, title: 'المنصور', description: 'تقدم إلى المنصور' },
+  { id: 7, title: 'غرامة', description: 'ادفع 100,000 غرامة' },
+  { id: 8, title: 'تراجع', description: 'تراجع 2 خطوات' },
+  { id: 9, title: 'من البنك', description: 'استلم 300,000 من البنك' },
+  { id: 10, title: 'ترميمات', description: 'ادفع ترميمات: 25K لكل بيت و 100K لكل فندق' },
+  { id: 11, title: 'أقرب محطة', description: 'تقدم إلى أقرب محطة' },
+  { id: 12, title: 'هدية', description: 'استلم 150,000 هدية' },
+  { id: 13, title: 'الكرادة داخل', description: 'تقدم إلى الكرادة داخل' },
+  { id: 14, title: 'للصندوق', description: 'ادفع 200,000 للصندوق' },
+  { id: 15, title: 'تقدم', description: 'تقدم 5 خطوات' },
+  { id: 16, title: 'من البنك', description: 'استلم 75,000 من البنك' },
+  { id: 17, title: 'ضريبة تعليم', description: 'ادفع 150,000 ضريبة تعليم' },
+  { id: 18, title: 'شارع الأميرات', description: 'تقدم إلى شارع الأميرات' },
+  { id: 19, title: 'جائزة', description: 'استلم 200,000 جائزة' },
+  { id: 20, title: 'للصندوق', description: 'ادفع 50,000 للصندوق' },
+];
+
 export function getTilePosition(tileId: number): { row: number; col: number; side: string } {
   if (tileId >= 0 && tileId <= 10) return { row: 10, col: 10 - tileId, side: 'bottom' };
   if (tileId >= 11 && tileId <= 19) return { row: 10 - (tileId - 10), col: 0, side: 'left' };

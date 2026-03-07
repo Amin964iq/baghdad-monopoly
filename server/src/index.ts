@@ -15,7 +15,7 @@ import type {
 } from './types.js';
 import {
   createGameState, getCurrentPlayer, rollDice, movePlayer,
-  processTileAction, buyProperty, payRent, buildHouse, sellHouse,
+  processTileAction, buyProperty, payRent, buildHouse, sellHouse, sellProperty,
   sendToJail, freeFromJail, switchPositions, bankruptPlayer,
   checkBankrupt, checkGameOver, advanceToNextPlayer, applyCardEffect,
   drawCard, addEvent, getActivePlayers, calculateRent, getTileData,
@@ -26,7 +26,8 @@ import {
   LUCKY_CHEST_CARDS, LUCK_CARDS, SWITCH_POSITION_COST, BOARD_TILES,
 } from './gameData.js';
 import { BotAI } from './botAI.js';
-import { createAdminRouter } from './adminRoutes.js';
+import { createAdminRouter, generateAdminToken } from './adminRoutes.js';
+import { loginUser, registerUser, getUser, updateUserStats, isAdmin as checkIsAdmin } from './userStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -59,6 +60,34 @@ try {
     }
   }
 } catch {}
+
+// User auth routes
+app.post('/api/user/login', (req, res) => {
+  const { username, pin } = req.body;
+  if (!username || !pin) { res.status(400).json({ error: 'Username and PIN required' }); return; }
+  const user = loginUser(username, pin);
+  if (!user) { res.status(401).json({ error: 'Invalid username or PIN' }); return; }
+  const response: any = { username: user.username, isAdmin: user.isAdmin, stats: user.stats };
+  if (user.isAdmin) {
+    response.adminToken = generateAdminToken(user.username);
+  }
+  res.json(response);
+});
+
+app.post('/api/user/register', (req, res) => {
+  const { username, pin } = req.body;
+  if (!username || !pin) { res.status(400).json({ error: 'Username and PIN required' }); return; }
+  if (pin.length < 4 || pin.length > 8) { res.status(400).json({ error: 'PIN must be 4-8 digits' }); return; }
+  const user = registerUser(username, pin);
+  if (!user) { res.status(409).json({ error: 'Username already taken' }); return; }
+  res.json({ username: user.username, isAdmin: user.isAdmin, stats: user.stats });
+});
+
+app.get('/api/user/:username', (req, res) => {
+  const user = getUser(req.params.username);
+  if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+  res.json({ username: user.username, isAdmin: user.isAdmin, stats: user.stats });
+});
 
 // Admin routes
 const adminRouter = createAdminRouter(
@@ -100,6 +129,8 @@ function startTurnTimer(roomId: string) {
   clearTurnTimer(roomId);
   const game = games.get(roomId);
   if (!game) return;
+
+  game.turnStartedAt = Date.now();
 
   const timer = setTimeout(() => {
     const g = games.get(roomId);
@@ -190,13 +221,27 @@ function endTurn(roomId: string, game: GameState) {
   const player = getCurrentPlayer(game);
 
   // Check bankruptcy
-  if (checkBankrupt(player)) {
+  const threshold = game.settings.bankruptThreshold ?? -500000;
+  if (checkBankrupt(player, threshold)) {
     bankruptPlayer(game, player);
     io.to(roomId).emit('player_bankrupt', player.id);
   }
 
   if (checkGameOver(game)) {
     clearTurnTimer(roomId);
+    // Update user stats
+    for (const p of game.players) {
+      if (!p.isBot) {
+        updateUserStats(p.name, (stats) => {
+          stats.gamesPlayed++;
+          if (p.id === game.winner) stats.gamesWon++;
+          else stats.gamesLost++;
+          stats.totalRentPaid += game.gameStats?.rentPaid[p.id] || 0;
+          stats.totalRentReceived += game.gameStats?.rentReceived[p.id] || 0;
+          stats.totalPropertiesBought += game.gameStats?.propertiesBought[p.id] || 0;
+        });
+      }
+    }
     broadcastGameState(roomId);
     return;
   }
@@ -301,6 +346,8 @@ function handleRollDice(roomId: string, game: GameState, player: Player) {
   io.to(roomId).emit('dice_rolled', { ...dice, playerId: player.id });
 
   if (dice.isDouble) {
+    if (!game.gameStats) game.gameStats = { rentPaid: {}, rentReceived: {}, rentPaidTo: {}, tileLandings: {}, propertiesBought: {}, doublesRolled: {}, timesInJail: {}, moneySpentOnHouses: {} };
+    game.gameStats.doublesRolled[player.id] = (game.gameStats.doublesRolled[player.id] || 0) + 1;
     addEvent(game, 'double', `${player.name} rolled a DOUBLE!`,
       `${player.name} رمى دوبل!`);
   }
@@ -470,6 +517,7 @@ io.on('connection', (socket) => {
       maxPlayers: settings?.maxPlayers || 10,
       startingMoney: settings?.startingMoney || STARTING_MONEY,
       turnTimerSeconds: settings?.turnTimerSeconds || TURN_TIMER_SECONDS,
+      bankruptThreshold: settings?.bankruptThreshold ?? -500000,
       botsEnabled: settings?.botsEnabled ?? true,
       botDifficulty: settings?.botDifficulty || 'normal',
     };
@@ -650,6 +698,21 @@ io.on('connection', (socket) => {
     broadcastRoom(roomId);
   });
 
+  socket.on('update_settings', (settings: Partial<GameSettings>) => {
+    const roomId = playerRoomMap.get(socket.id);
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    if (!room) return;
+    if (room.gameStarted) return;
+
+    const hostPlayer = room.players.find(p => p.socketId === socket.id);
+    if (!hostPlayer || hostPlayer.id !== room.hostId) return;
+
+    room.settings = { ...room.settings, ...settings };
+    if (settings.maxPlayers) room.maxPlayers = settings.maxPlayers;
+    broadcastRoom(roomId);
+  });
+
   socket.on('start_game', () => {
     const roomId = playerRoomMap.get(socket.id);
     if (!roomId) return;
@@ -757,6 +820,21 @@ io.on('connection', (socket) => {
     if (player.socketId !== socket.id) return;
 
     if (sellHouse(game, player, tileId)) {
+      broadcastGameState(roomId);
+    }
+  });
+
+  socket.on('sell_property', (tileId) => {
+    const roomId = playerRoomMap.get(socket.id);
+    if (!roomId) return;
+    const game = games.get(roomId);
+    if (!game || game.phase !== 'managing') return;
+
+    const player = getCurrentPlayer(game);
+    if (player.socketId !== socket.id) return;
+
+    if (sellProperty(game, player, tileId)) {
+      io.to(roomId).emit('property_sold', { playerId: player.id, tileId });
       broadcastGameState(roomId);
     }
   });
@@ -909,6 +987,21 @@ io.on('connection', (socket) => {
     game.phase = 'game_over';
     game.winner = richest?.id || null;
     addEvent(game, 'game_over', `${richest?.name || 'Nobody'} wins!`, `${richest?.name || 'لا أحد'} فاز باللعبة!`);
+
+    // Update user stats for all players
+    for (const p of game.players) {
+      if (!p.isBot) {
+        updateUserStats(p.name, (stats) => {
+          stats.gamesPlayed++;
+          if (p.id === game.winner) stats.gamesWon++;
+          else stats.gamesLost++;
+          stats.totalRentPaid += game.gameStats?.rentPaid[p.id] || 0;
+          stats.totalRentReceived += game.gameStats?.rentReceived[p.id] || 0;
+          stats.totalPropertiesBought += game.gameStats?.propertiesBought[p.id] || 0;
+        });
+      }
+    }
+
     broadcastGameState(roomId);
   });
 

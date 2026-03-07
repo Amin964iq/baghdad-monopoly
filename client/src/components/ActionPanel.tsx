@@ -73,20 +73,17 @@ export default function ActionPanel({ gameState, isMyTurn, myPlayer, currentPlay
         {/* Jail phase */}
         {phase === 'in_jail' && myPlayer && (
           <div className="action-group">
-            <p className="action-text">🔒 انت في السجن! اختر طريقة الخروج:</p>
+            <p className="action-text">🔒 انت في السجن! اختر:</p>
             <button className="action-btn pay-btn" onClick={() => socket.emit('jail_pay')}>
-              💰 ادفع 150K
+              💰 ادفع الكفالة (150K) واخرج
             </button>
             {myPlayer.getOutOfJailCards > 0 && (
               <button className="action-btn" onClick={() => socket.emit('jail_card')}>
                 🎫 استخدم بطاقة خروج
               </button>
             )}
-            <button className="action-btn" onClick={() => socket.emit('jail_roll')}>
-              🎲 ارمي (دوبل للخروج)
-            </button>
             <button className="action-btn secondary" onClick={() => socket.emit('jail_wait')}>
-              ⏳ انتظر ({myPlayer.jailTurns}/3)
+              🔒 ابقى بالسجن ({myPlayer.jailTurns}/3 أدوار)
             </button>
           </div>
         )}

@@ -112,21 +112,23 @@ function chooseSwitchTarget(player: Player, state: GameState, difficulty: Diffic
   return null;
 }
 
-function chooseJailAction(player: Player, state: GameState, difficulty: Difficulty): 'pay' | 'card' | 'roll' | 'wait' {
+function chooseJailAction(player: Player, state: GameState, difficulty: Difficulty): 'pay' | 'card' | 'wait' {
   if (player.getOutOfJailCards > 0) return 'card';
 
   if (difficulty === 'easy') {
-    return player.jailTurns >= 2 ? 'pay' : 'wait';
+    // Easy bots always wait out jail
+    return 'wait';
   }
 
   if (difficulty === 'smart') {
-    // Smart: stay in jail early game (fewer properties to land on)
+    // Smart: pay bail if many properties owned (risky to land on them)
     const totalOwned = state.players.reduce((sum, p) => sum + p.properties.length, 0);
     if (totalOwned > 15 && player.money > 300_000) return 'pay';
-    return player.jailTurns >= 2 ? 'pay' : 'roll';
+    return 'wait';
   }
 
-  return player.jailTurns >= 1 ? 'pay' : 'roll';
+  // Normal: pay if can afford, otherwise wait
+  return player.money > 300_000 ? 'pay' : 'wait';
 }
 
 export const BotAI = {

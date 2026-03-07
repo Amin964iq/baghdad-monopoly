@@ -33,6 +33,7 @@ export interface Player {
   inJail: boolean;
   jailTurns: number;
   getOutOfJailCards: number;
+  rentImmunities: Record<number, string>;
   bankrupt: boolean;
   isBot: boolean;
   connected: boolean;
@@ -56,6 +57,12 @@ export interface RoomPlayer {
   isBot: boolean;
 }
 
+export interface TradeCondition {
+  type: 'rent_immunity';
+  tileId: number;
+  beneficiary: 'from' | 'to';
+}
+
 export interface TradeOffer {
   id: string;
   fromPlayerId: string;
@@ -66,6 +73,7 @@ export interface TradeOffer {
   requestMoney: number;
   offerJailCards: number;
   requestJailCards: number;
+  conditions: TradeCondition[];
   status: string;
 }
 

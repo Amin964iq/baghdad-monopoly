@@ -13,11 +13,18 @@ export interface Player {
   inJail: boolean;
   jailTurns: number;
   getOutOfJailCards: number;
+  rentImmunities: Record<number, string>; // tileId -> playerId who is immune from rent
   bankrupt: boolean;
   isBot: boolean;
   botDifficulty?: 'easy' | 'normal' | 'smart';
   connected: boolean;
   socketId?: string;
+}
+
+export interface TradeCondition {
+  type: 'rent_immunity';    // player won't pay rent on this tile
+  tileId: number;           // which property
+  beneficiary: 'from' | 'to'; // who gets the immunity
 }
 
 export interface TradeOffer {
@@ -30,6 +37,7 @@ export interface TradeOffer {
   requestMoney: number;
   offerJailCards: number;
   requestJailCards: number;
+  conditions: TradeCondition[];
   status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
 }
 
@@ -165,7 +173,6 @@ export interface ClientToServerEvents {
   pay_rent: () => void;
   jail_pay: () => void;
   jail_card: () => void;
-  jail_roll: () => void;
   jail_wait: () => void;
   switch_position_target: (targetPlayerId: string) => void;
   switch_position_skip: () => void;

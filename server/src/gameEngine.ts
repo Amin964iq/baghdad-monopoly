@@ -37,6 +37,7 @@ export function createGameState(roomId: string, hostId: string, players: RoomPla
     inJail: false,
     jailTurns: 0,
     getOutOfJailCards: 0,
+    rentImmunities: {},
     bankrupt: false,
     isBot: p.isBot,
     botDifficulty: p.isBot ? (settings.botDifficulty || 'normal') : undefined,
@@ -462,6 +463,13 @@ export function payRent(state: GameState, payer: Player, diceTotal: number): { o
   const owner = getPropertyOwner(state, tile.id);
   if (!owner || owner.id === payer.id || owner.inJail) return null;
 
+  // Check rent immunity - if the owner granted immunity to this payer for this tile
+  if (owner.rentImmunities[tile.id] === payer.id) {
+    addEvent(state, 'immunity', `${payer.name} has rent immunity on ${tile.name}!`,
+      `${payer.name} معفى من الإيجار على ${tile.name}!`);
+    return { ownerId: owner.id, amount: 0 };
+  }
+
   const rent = calculateRent(state, tile.id, diceTotal);
   const actualPayment = Math.min(rent, payer.money);
   payer.money -= actualPayment;
@@ -592,6 +600,22 @@ export function executeTrade(state: GameState, trade: TradeOffer): boolean {
   to.getOutOfJailCards += trade.offerJailCards;
   to.getOutOfJailCards -= trade.requestJailCards;
   from.getOutOfJailCards += trade.requestJailCards;
+
+  // Apply conditions (rent immunities)
+  if (trade.conditions) {
+    for (const cond of trade.conditions) {
+      if (cond.type === 'rent_immunity') {
+        // The property owner grants immunity to the other player
+        if (cond.beneficiary === 'from') {
+          // 'from' player gets immunity - the tile must be owned by 'to'
+          to.rentImmunities[cond.tileId] = from.id;
+        } else {
+          // 'to' player gets immunity - the tile must be owned by 'from'
+          from.rentImmunities[cond.tileId] = to.id;
+        }
+      }
+    }
+  }
 
   addEvent(state, 'trade', `${from.name} and ${to.name} completed a trade!`,
     `${from.name} و ${to.name} أتمّوا صفقة!`);

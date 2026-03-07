@@ -199,7 +199,7 @@ function handleBotTurn(roomId: string) {
 function handleJailAction(roomId: string, game: GameState, player: Player, action: string) {
   switch (action) {
     case 'pay':
-      // Always allow paying - even if can't fully afford, deduct what they have
+      // Pay bail and get freed immediately - can roll this turn
       player.money -= JAIL_BAIL;
       freeFromJail(game, player);
       addEvent(game, 'freed', `${player.name} paid bail!`,
@@ -219,63 +219,19 @@ function handleJailAction(roomId: string, game: GameState, player: Player, actio
         if (player.isBot) setTimeout(() => handleBotTurn(roomId), 1000);
       }
       break;
-    case 'roll': {
-      const dice = rollDice();
-      game.dice = dice;
-      io.to(roomId).emit('dice_rolled', { ...dice, playerId: player.id });
-      broadcastGameState(roomId);
-
-      if (dice.isDouble) {
-        addEvent(game, 'freed', `${player.name} rolled a double and escaped jail!`,
-          `${player.name} رمى دوبل وخرج من السجن!`);
-        setTimeout(() => {
-          const g = games.get(roomId);
-          if (!g) return;
-          freeFromJail(g, player);
-          movePlayer(g, player, dice.total);
-          const nextPhase = processTileAction(g, player);
-          g.phase = nextPhase;
-          broadcastGameState(roomId);
-          if (player.isBot) setTimeout(() => processBotPhase(roomId), 1500);
-        }, 1500);
-      } else {
-        player.jailTurns++;
-        if (player.jailTurns >= 3) {
-          // After 3 failed rolls, forced to pay bail
-          addEvent(game, 'jail', `${player.name} paid bail after 3 turns`,
-            `${player.name} دفع الكفالة بعد 3 أدوار`);
-          setTimeout(() => {
-            const g = games.get(roomId);
-            if (!g) return;
-            player.money -= JAIL_BAIL;
-            freeFromJail(g, player);
-            movePlayer(g, player, dice.total);
-            const nextPhase = processTileAction(g, player);
-            g.phase = nextPhase;
-            broadcastGameState(roomId);
-            if (player.isBot) setTimeout(() => processBotPhase(roomId), 1500);
-          }, 1500);
-        } else {
-          addEvent(game, 'jail', `${player.name} didn't roll a double (${player.jailTurns}/3)`,
-            `${player.name} لم يرمي دوبل (${player.jailTurns}/3)`);
-          setTimeout(() => {
-            const g = games.get(roomId);
-            if (!g) return;
-            endTurn(roomId, g);
-          }, 1500);
-        }
-      }
-      break;
-    }
     case 'wait':
-      // Wait = just end turn, count as a jail turn
+      // Choose to stay in jail - skip turn, count jail round
       player.jailTurns++;
       if (player.jailTurns >= 3) {
-        player.money -= JAIL_BAIL;
+        // 3 rounds done, auto-freed
         freeFromJail(game, player);
-        addEvent(game, 'jail', `${player.name} paid bail after 3 turns`,
-          `${player.name} دفع الكفالة بعد 3 أدوار`);
+        addEvent(game, 'freed', `${player.name} served 3 rounds and is free!`,
+          `${player.name} أكمل 3 أدوار وخرج من السجن!`);
+      } else {
+        addEvent(game, 'jail', `${player.name} stays in jail (${player.jailTurns}/3)`,
+          `${player.name} يبقى في السجن (${player.jailTurns}/3)`);
       }
+      // Either way, turn ends - no rolling while in jail
       endTurn(roomId, game);
       break;
   }
@@ -774,18 +730,6 @@ io.on('connection', (socket) => {
     handleJailAction(roomId, game, player, 'card');
   });
 
-  socket.on('jail_roll', () => {
-    const roomId = playerRoomMap.get(socket.id);
-    if (!roomId) return;
-    const game = games.get(roomId);
-    if (!game || game.phase !== 'in_jail') return;
-
-    const player = getCurrentPlayer(game);
-    if (player.socketId !== socket.id) return;
-
-    handleJailAction(roomId, game, player, 'roll');
-  });
-
   socket.on('jail_wait', () => {
     const roomId = playerRoomMap.get(socket.id);
     if (!roomId) return;
@@ -1068,6 +1012,7 @@ io.on('connection', (socket) => {
 
     const trade: TradeOffer = {
       ...data,
+      conditions: data.conditions || [],
       id: uuidv4(),
       status: 'pending',
     };
